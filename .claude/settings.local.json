@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tail:*)",
+      "Bash(cd /c/Users/zona/Documents/GitHub/perspect && npx --no tsc --noEmit 2>&1)",
+      "Bash(cd:*)",
+      "Bash(cd /c/Users/zona/Documents/GitHub/perspect && git push origin main 2>&1)",
+      "Bash(gh auth:*)"
+    ]
+  }
+}
