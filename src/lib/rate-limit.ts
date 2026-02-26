@@ -1,7 +1,45 @@
 /**
- * Simple in-memory rate limiter for edge runtime.
- * Limits per IP address using a sliding window.
+ * Basic API protection for edge runtime.
+ * - Origin check: rejects requests not from our own domain
+ * - Rate limit: sliding window per IP for LLM-calling paths
  */
+
+// ─── Origin check ────────────────────────────────────────────────────────────
+
+const ALLOWED_ORIGINS = new Set(
+  (process.env.ALLOWED_ORIGINS ?? "").split(",").filter(Boolean)
+);
+
+export function checkOrigin(req: Request): Response | null {
+  // Skip in development
+  if (process.env.NODE_ENV === "development") return null;
+
+  const origin = req.headers.get("origin");
+  const referer = req.headers.get("referer");
+
+  // Must have at least one
+  if (!origin && !referer) {
+    return forbidden();
+  }
+
+  // Check origin header first, fall back to referer
+  const source = origin ?? new URL(referer!).origin;
+
+  if (!ALLOWED_ORIGINS.has(source)) {
+    return forbidden();
+  }
+
+  return null;
+}
+
+function forbidden(): Response {
+  return new Response(
+    JSON.stringify({ error: "Forbidden" }),
+    { status: 403, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+// ─── Rate limit ──────────────────────────────────────────────────────────────
 
 const store = new Map<string, number[]>();
 

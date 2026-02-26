@@ -4,12 +4,15 @@ import { ParseRequestSchema, DatabaseSchemaSchema } from "@/types/schema";
 import { parseSchema } from "@/parsers";
 import { buildParsePrompt } from "@/prompts";
 import { getModel } from "@/lib/ai";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkOrigin, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "edge";
 
 export async function POST(req: NextRequest) {
   try {
+    const blocked = checkOrigin(req);
+    if (blocked) return blocked;
+
     const body = await req.json();
     const { input, format } = ParseRequestSchema.parse(body);
 

@@ -4,7 +4,7 @@ import { GenerateRequestSchema } from "@/types/schema";
 import { buildGenerationPrompt } from "@/prompts";
 import { getModel } from "@/lib/ai";
 import { isTemplateTarget, generateFromTemplate } from "@/generators";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkOrigin, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "edge";
 
@@ -18,6 +18,9 @@ const DEFAULT_CONFIG = {
 
 export async function POST(req: NextRequest) {
   try {
+    const blocked = checkOrigin(req);
+    if (blocked) return blocked;
+
     const body = await req.json();
     const { schema, target, config } = GenerateRequestSchema.parse(body);
     const resolvedConfig = config ?? DEFAULT_CONFIG;
