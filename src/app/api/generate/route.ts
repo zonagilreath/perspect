@@ -4,6 +4,7 @@ import { GenerateRequestSchema } from "@/types/schema";
 import { buildGenerationPrompt } from "@/prompts";
 import { getModel } from "@/lib/ai";
 import { isTemplateTarget, generateFromTemplate } from "@/generators";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "edge";
 
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
     const { schema, target, config } = GenerateRequestSchema.parse(body);
     const resolvedConfig = config ?? DEFAULT_CONFIG;
 
-    // Deterministic generation for mechanical targets (zod, types)
+    // Deterministic targets are free — only rate-limit LLM calls
     if (isTemplateTarget(target)) {
       const code = generateFromTemplate(schema, target, resolvedConfig);
 
@@ -30,7 +31,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // LLM-based generation for complex targets (trpc, react-form)
+    // LLM-based generation — rate limit these
+    const limited = rateLimit(req);
+    if (limited) return limited;
+
     const prompt = buildGenerationPrompt(schema, target, resolvedConfig);
     const model = getModel();
 

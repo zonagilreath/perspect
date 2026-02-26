@@ -4,6 +4,7 @@ import { ParseRequestSchema, DatabaseSchemaSchema } from "@/types/schema";
 import { parseSchema } from "@/parsers";
 import { buildParsePrompt } from "@/prompts";
 import { getModel } from "@/lib/ai";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "edge";
 
@@ -19,7 +20,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(parsed);
     }
 
-    // English requires LLM parsing
+    // English requires LLM parsing — rate limit these
+    const limited = rateLimit(req);
+    if (limited) return limited;
+
     const model = getModel();
     const result = await generateText({
       model,
