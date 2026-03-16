@@ -1,4 +1,4 @@
-import type { DatabaseSchema, GenerationConfig, Model, Field } from "@/types/schema";
+import type { DatabaseSchema, GenerationConfig, Field } from "@/types/schema";
 
 /**
  * Deterministic tRPC router generator.
@@ -56,7 +56,7 @@ export function generateTrpcRouter(
       lines.push("");
     }
 
-    for (const [modelName, relatedModels] of relationMap.entries()) {
+    for (const [modelName, relatedModels] of Array.from(relationMap.entries())) {
       for (const related of relatedModels) {
         const fnName = `load${related}sFor${modelName}`;
         if (includeComments) {
@@ -152,8 +152,7 @@ export function generateTrpcRouter(
     } else {
       lines.push(`      const items = await db.select().from(${lower}Table)`);
       lines.push(`        .orderBy(desc(${lower}Table.createdAt))`);
-      lines.push(`        .limit(limit + 1)`);
-      lines.push(`        ${ `${lower}Table`.length > 0 && cursor ? `.where(lt(${lower}Table.createdAt, cursorDate))` : "" };`);
+      lines.push(`        .limit(limit + 1);`);
     }
     lines.push(`      let nextCursor: string | undefined;`);
     lines.push(`      if (items.length > limit) {`);
