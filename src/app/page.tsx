@@ -12,6 +12,7 @@ import { Header } from "@/components/Header";
 import { SchemaEditor } from "@/components/SchemaEditor";
 import { OutputPanel } from "@/components/OutputPanel";
 import { ConfigDialog } from "@/components/ConfigDialog";
+import { stripCodeFence } from "@/lib/utils";
 
 import type {
   InputFormat,
@@ -107,7 +108,8 @@ export default function Home() {
         if (done) break;
 
         accumulated += decoder.decode(value, { stream: true });
-        setOutputs((prev) => ({ ...prev, [target]: accumulated }));
+        // Strip code fences while streaming so Monaco always sees clean TS
+        setOutputs((prev) => ({ ...prev, [target]: stripCodeFence(accumulated) }));
       }
 
       return accumulated;
