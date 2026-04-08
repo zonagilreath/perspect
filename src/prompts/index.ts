@@ -1,6 +1,6 @@
 import type { DatabaseSchema, GenerationConfig, GenerationTarget } from "@/types/schema";
 
-// ─── English → Schema parsing prompt ────────────────────────────────────────
+// ─── English → Schema parsing prompt ─────────────────────────────────────────
 
 export function buildParsePrompt(englishDescription: string): string {
   return `You are a database schema architect. Given a plain English description of a data model, produce a structured JSON representation.
@@ -47,7 +47,7 @@ Respond with ONLY valid JSON matching this structure (no markdown, no explanatio
 }`;
 }
 
-// ─── Code generation prompts ────────────────────────────────────────────────
+// ─── Code generation prompts ──────────────────────────────────────────────────
 
 function schemaToContext(schema: DatabaseSchema): string {
   return JSON.stringify(schema, null, 2);
@@ -99,45 +99,22 @@ Generate ONLY valid TypeScript code. No markdown fences, no explanations. The co
 }
 
 function buildTrpcPrompt(ctx: string, cfg: GenerationConfig): string {
-  const style = cfg.apiStyle === "trpc" ? "tRPC" : "REST (Express/Fastify)";
-
-  if (cfg.apiStyle === "trpc") {
-    return `You are a senior TypeScript engineer. Generate tRPC router definitions from the database schema below.
-
-Requirements:
-- Import Zod schemas from "./schemas" (assume they exist — name them like: create{Model}Schema, update{Model}Schema)
-- Use the t.router() and t.procedure pattern
-- For each model, generate these procedures:
-  - getById: publicProcedure.input(z.object({ id: z.string().uuid() })).query(...)
-  - list: publicProcedure.input(z.object({ cursor: z.string().optional(), limit: z.number().min(1).max(100).default(20) })).query(...)
-  - create: publicProcedure.input(create{Model}Schema).mutation(...)
-  - update: publicProcedure.input(z.object({ id: z.string().uuid(), data: update{Model}Schema })).mutation(...)
-  - delete: publicProcedure.input(z.object({ id: z.string().uuid() })).mutation(...)
-- Use ${cfg.ormStyle === "prisma" ? "Prisma Client" : "Drizzle ORM"} in the procedure bodies
-- Include cursor-based pagination for list queries
-- ${cfg.includeComments ? "Include JSDoc comments" : "Omit comments"}
-- Export each model's router and a merged appRouter
-
-Database schema:
-${ctx}
-
-Generate ONLY valid TypeScript code. No markdown fences, no explanations.`;
-  }
-
+  // tRPC is now handled deterministically — this prompt is only used
+  // for REST apiStyle fallback.
   return `You are a senior TypeScript engineer. Generate RESTful API route handlers from the database schema below.
 
+Stack assumptions:
+- Express-style route handlers (req, res, next)
+- Zod for all input validation — import schemas from "./schemas"
+- ${cfg.ormStyle === "prisma" ? "Prisma Client imported from \"./db\"" : "Drizzle ORM imported from \"./db\""}
+
 Requirements:
-- Use Express-style route handlers (req, res, next)
-- Import Zod schemas from "./schemas" for input validation
-- For each model, generate CRUD endpoints:
-  - GET /{model}/:id
-  - GET /{model} (with pagination query params)
-  - POST /{model}
-  - PATCH /{model}/:id
-  - DELETE /{model}/:id
-- Validate request body/params with Zod .parse()
-- Wrap handlers in try/catch with proper error responses
-- Use ${cfg.ormStyle === "prisma" ? "Prisma Client" : "Drizzle ORM"} for data access
+- For each model generate CRUD endpoints: GET /:id, GET / (paginated), POST /, PATCH /:id, DELETE /:id
+- Pagination: accept ?cursor and ?limit query params, return { items, nextCursor }
+- Validate all inputs with Zod .parse() — never trust raw req.body
+- Wrap every handler in try/catch; return { error: string } with appropriate status codes
+  (400 for validation, 404 for not found, 500 for unexpected)
+- Use consistent response shape: { data: T } for success, { error: string } for failure
 - ${cfg.includeComments ? "Include JSDoc comments" : "Omit comments"}
 
 Database schema:
@@ -147,34 +124,46 @@ Generate ONLY valid TypeScript code. No markdown fences, no explanations.`;
 }
 
 function buildFormPrompt(ctx: string, cfg: GenerationConfig): string {
-  const formLib = cfg.formLibrary === "react-hook-form"
-    ? "react-hook-form with @hookform/resolvers/zod"
-    : "native React state with manual validation";
+  const useRHF = cfg.formLibrary === "react-hook-form";
 
   return `You are a senior React/TypeScript engineer. Generate form components from the database schema below.
 
-Requirements:
-- Generate a Create form and an Edit form for each model
-- Use ${formLib} for form management
-- Import Zod schemas from "./schemas" (assume they exist — name them like: create{Model}Schema)
-- Map field types to appropriate inputs:
-  - string → <input type="text" /> (or <textarea> if field name suggests long text like "description", "bio", "content")
-  - number → <input type="number" />
-  - boolean → <input type="checkbox" /> with a label
-  - date/datetime → <input type="date" /> or <input type="datetime-local" />
-  - enum → <select> with options from enumValues
-  - relation → <select> with a placeholder (actual options come from parent)
-- Display validation errors below each field
-- Use TypeScript generics where appropriate
-- Style with Tailwind CSS utility classes
-- Use accessible markup: <label>, aria attributes, proper htmlFor
-- ${cfg.includeComments ? "Include brief comments" : "Omit comments"}
-- Export each form as a named export
+Stack assumptions:
+- ${useRHF ? "react-hook-form with @hookform/resolvers/zod for form state and validation" : "Native React controlled state with manual Zod validation on submit"}
+- Zod schemas imported from "./schemas" (create{Model}Schema, update{Model}Schema)
+- Tailwind CSS for all styling
+- TypeScript strict mode — no implicit any, all props typed
+
+Field → input mapping (follow this exactly, do not improvise):
+- string → <input type="text" /> unless name contains: description, bio, content, body, notes, summary → <textarea />
+- number → <input type="number" />
+- boolean → <input type="checkbox" /> wrapped in a <label> with descriptive text
+- date → <input type="date" />
+- datetime → <input type="datetime-local" />
+- enum → <select> with an empty disabled first option ("Select...") plus one <option> per enum value
+- relation (non-list) → <select> with placeholder; accept options as a prop: { id: string; label: string }[]
+- relation (list) → omit from the form entirely; manage through separate association UI
+
+Component structure (follow this exactly):
+- One Create form and one Edit form per model
+- Edit form accepts the existing record as a defaultValues prop
+- ${useRHF
+  ? `Use useForm<z.infer<typeof create{Model}Schema>>({ resolver: zodResolver(create{Model}Schema) })
+- Access errors via formState.errors — display inline below each field as <p className="text-sm text-red-500">
+- Submit calls onSubmit prop: (data: Create{Model}Input) => Promise<void>
+- Show a loading state on the submit button while the promise is pending (use formState.isSubmitting)`
+  : `Use useState for each field
+- Validate with schema.safeParse on submit — collect errors into a Record<string, string> state
+- Display errors inline below each field as <p className="text-sm text-red-500">
+- Submit calls onSubmit prop: (data: Create{Model}Input) => Promise<void>`}
+- Wrap fields in <div className="space-y-4"> with each field in <div className="flex flex-col gap-1">
+- Every input paired with a <label htmlFor={...}> using a human-readable label derived from the field name
+- ${cfg.includeComments ? "Add a brief comment above each form explaining its purpose" : "Omit comments"}
 
 Database schema:
 ${ctx}
 
-Generate ONLY valid TypeScript/React code (TSX). No markdown fences, no explanations. The code should be a single file that can be saved as forms.tsx and imported directly.`;
+Generate ONLY valid TypeScript/React code (TSX). No markdown fences, no explanations. Single file, save as forms.tsx.`;
 }
 
 function buildTypesPrompt(ctx: string, _cfg: GenerationConfig): string {
